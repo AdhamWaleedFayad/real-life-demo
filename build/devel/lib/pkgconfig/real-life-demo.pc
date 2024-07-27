@@ -1,0 +1,8 @@
+prefix=/home/mostafa/real_life_demo_repo/real-life-demo/build/devel
+
+Name: real-life-demo
+Description: Description of real-life-demo
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 
