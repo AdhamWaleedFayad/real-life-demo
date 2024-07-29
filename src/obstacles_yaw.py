@@ -13,13 +13,13 @@ class Lidar:
     def __init__(self):
         rospy.init_node("lidar_node", anonymous=True)
         self.cloud_sub = rospy.Subscriber("/velodyne_points", PointCloud2, self.callback)
-        self.cloud_pub = rospy.Publisher("/filtered_points", PointCloud2, queue_size=10)
+        self.cloud_pub = rospy.Publisher("/filtered_points", PointCloud2, queue_size=2)
         self.odom_sub = rospy.Subscriber("/aft_mapped_adjusted", Odometry, self.odom_callback)
-        self.boundary_pub = rospy.Publisher("/obstacles", PointCloud, queue_size=10)
+        self.boundary_pub = rospy.Publisher("/obstacles", PointCloud, queue_size=2)
         self.points = [[], [], []]  # x, y, z
-        self.min_distance_threshold = 0.5  # in meters
-        self.max_distance_threshold = 5.0  # in meters
-        self.vehicle_diagonal = 0.0
+        self.min_distance_threshold = 1  # in meters
+        self.max_distance_threshold = 8.0  # in meters
+        self.vehicle_diagonal = 0.5
         self.current_odom = None
 
     def odom_callback(self, msg):
@@ -37,7 +37,7 @@ class Lidar:
         filtered_points = [[], [], []]
         for x, y, z in cloud_points:
             distance = np.sqrt(x**2 + y**2)
-            if self.min_distance_threshold <= distance <= self.max_distance_threshold and z > -0.7 and z < 0.1:
+            if self.min_distance_threshold <= distance <= self.max_distance_threshold and z > -1.2 and z < 0:
                 filtered_points[0].append(x)
                 filtered_points[1].append(y)
                 filtered_points[2].append(z)
