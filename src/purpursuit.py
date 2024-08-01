@@ -226,7 +226,7 @@ class Trajectory:
     def purepursuit(self, targetIndex):
         roll, pitch, yaw = euler_from_quaternion([self.ori_x, self.ori_y, self.ori_z, self.ori_w])
 
-        # yaw += (math.pi/2.0)
+        yaw += (math.pi/2.0)
         # rospy.loginfo("Yaw: %f", yaw)
 
         self.rear_y = self.current_y - ((WB) * math.sin(yaw))

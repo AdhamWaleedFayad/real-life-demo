@@ -14,13 +14,13 @@ from matplotlib import style
 import numpy as np
 
 # Simulation constants #
-WB = 2.269              #Wheel base
+WB = 2.1                #Wheel base
 MU = 0.7                #Friction coefficient
 G = 9.81                #Gravity
 DT = 0.05               #Time step
 KV = 0.2                #Velocity constant (step size)      0.3
 STEP_SIZE = 0.5         #Step size                          1.1
-RANGE_DIST = 1.0       #Range distance                     10.0
+RANGE_DIST = 1.0        #Range distance                     10.0
 
 state_pos_x = 0.0
 state_pos_y = 0.0
@@ -46,7 +46,7 @@ ax1 = fig.add_subplot(1,1,1)
 def animate(i):
     global state_pos_x, state_pos_y, plotted_path_x, plotted_path_y
     for i in range(len(plotted_path_x)):
-        ax1.plot(plotted_path_x[i], plotted_path_y[i], 'b-')
+        ax1.plot(plotted_path_x[i], plotted_path_y[i], ',b')
     # ax1.clear()
 
     # if plotted_path_x and plotted_path_y:
@@ -112,7 +112,7 @@ def odom_callback(msg:Odometry):
     velocity = 5.0 * (5.0/18.0)
 
     roll, pitch, yaw = euler_from_quaternion([ori_x, ori_y, ori_z, ori_w])
-    state_yaw = yaw
+    state_yaw = yaw + (math.pi/2.0)
     rospy.loginfo("Yaw orientation: %f", state_yaw)
 
     start_pos_x = state_pos_x #+ ((0.2) * math.cos(state_yaw))
@@ -126,7 +126,7 @@ def odom_callback(msg:Odometry):
     path.header.frame_id = "map"
 
     rospy.loginfo("Generating path...")
-    goal_node = Node(10.0, 0.0, theta=0.0)
+    goal_node = Node(0.0, 10.0, theta=(math.pi/2.0))
     # if goal_node is not None:
     best_path = hybrid_astar(goal_node)
 
