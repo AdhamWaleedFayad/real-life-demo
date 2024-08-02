@@ -2,9 +2,10 @@
 
 import rospy
 import matplotlib.pyplot as plt
-from std_msgs.msg import Float64, Float32
+from std_msgs.msg import Float64, Float32, Bool
 from nav_msgs.msg import Odometry, Path
 import math
+import numpy as np
 import pandas as pd
 from tf.transformations import euler_from_quaternion
 from circle_fit import standardLSQ as curve_fit
@@ -12,9 +13,9 @@ from circle_fit import standardLSQ as curve_fit
 data = [[], [], [], []]
 time = 0.0
 # Pure pursuit Constants #
-WB = 1.2      #Wheel base
-KDD = 0.1     #Velocity constant of lookahead distance
-KS = 0.3        #Softening constant
+WB = 2.1                    #Wheel base
+KDD = 0.2                   #Velocity constant of lookahead distance
+KS = 1.1                    #Softening constant
 
 # PID Constants #
 KP = 0.08
@@ -65,16 +66,14 @@ class Trajectory:
         self.old_error = 0.0
         
         self.old_nearest_index = None
+        self.goal_reached = False
+
+    def is_goal_callback(self, data:Bool):
+        self.goal_reached = data.data
 
     def waypointsCallback(self, path:Path):
         rospy.loginfo("<<<<<<New Path has been recieved>>>>>>")
-
-        waypoints = []
-        waypoints = path.poses
-        
-        if waypoints:
-            self.waypoints = path.poses
-            self.old_nearest_index = None
+        self.waypoints = path.poses
 
     def search_waypoint(self):
         if self.old_nearest_index is None:
@@ -122,118 +121,51 @@ class Trajectory:
         self.ori_y = state.pose.pose.orientation.y
         self.ori_z = state.pose.pose.orientation.z
 
-        self.vel_x = state.twist.twist.linear.x
-        self.vel_y = state.twist.twist.linear.y
-
-        self.velocity = math.sqrt((self.vel_x)**2 + (self.vel_y)**2)
-
-        # throttle_pub = rospy.Publisher(
-        #     '/cmd_vel', Float64, queue_size=10
-        # )
-        throttle_pub = rospy.Publisher(
+        velocity_pub = rospy.Publisher(
             '/in_Car_velocity_in_KM/H', Float32, queue_size=10
         )
         steer_pub = rospy.Publisher(
             '/in_Car_steering_in_degree', Float32, queue_size=10
         )
-        # brakes_pub = rospy.Publisher(
-        #     '/brakes', Float64, queue_size=10
-        # )
 
         # Calculate Lookahead distance using velocity (adaptive pure pursuit) #
         self.Ld = KDD * self.velocity + KS
         # rospy.loginfo("Ld: %f", self.Ld)
 
         # Search waypoints list to get the index of target waypoint #
-        if self.waypoints:
+        if not self.goal_reached:
 
             target_index = self.search_waypoint()
-            # rospy.loginfo("Throttle: %f", throttle)
-            throttle = 5.0
-
             # Calculate steering angle using adaptive pure pursuit algorithm #
             steering_angle = self.purepursuit(target_index)
             
-            # rospy.loginfo("Velocity: %f", self.velocity)
-            # rospy.loginfo("Target position: (%f, %f)", self.waypoints[target_index].pose.position.x, self.waypoints[target_index].pose.position.y)
-            # rospy.loginfo("Target_index : %i", target_index)
-            # rospy.loginfo("Current position: (%f, %f)", self.current_x, self.current_y)
+            velocity = 3.0
+
+            rospy.loginfo("Target position: (%f, %f)", self.waypoints[target_index].pose.position.x, self.waypoints[target_index].pose.position.y)
+            rospy.loginfo("Target_index : %i", target_index)
+            rospy.loginfo("Current position: (%f, %f)", self.current_x, self.current_y)
 
         else:
-            throttle = 0.0
+            velocity = 0.0
             steering_angle = 0.0
 
+        rospy.loginfo("Steering angle : %f", steering_angle)
         steering_angle_msg = Float32(steering_angle)
         steer_pub.publish(steering_angle_msg)
 
-        throttle_msg = Float32(throttle)
-        throttle_pub.publish(throttle_msg)
+        velocity_msg = Float32(velocity)
+        velocity_pub.publish(velocity_msg)
 
-    def PID(self, targetIndex):
-        next_points = []
-        throttle = 0.0
-        brakes = 0.0
-
-        if targetIndex is None:
-            return throttle, brakes
-
-        if targetIndex < (len(self.waypoints) - 5):
-            for i in range(4):
-                next_points.append((self.waypoints[targetIndex + i].pose.position.x, self.waypoints[targetIndex + i].pose.position.y))
-            xc, yc, r, sigma = curve_fit(next_points)
-
-            curve_velocity = math.sqrt(MU * G * r) * 0.62
-
-        elif targetIndex > (len(self.waypoints) - 2):
-            curve_velocity = -1.0
-            # brakes = 0.6
-            # return throttle, brakes
-        
-        else:
-            curve_velocity = MAX_VELOCITY
-
-        relative_X = abs(self.waypoints[targetIndex].pose.position.x - self.current_x)
-        R_pp = ((self.Ld) ** 2) / ((2.0 * relative_X) + 0.0001)
-        
-        purepursuit_velocity = math.sqrt(MU * G * R_pp) * 0.67
-
-        self.desired_velocity = min(min(curve_velocity, purepursuit_velocity), MAX_VELOCITY)
-
-        goal_distance = calc_distance(self.current_x, self.current_y, self.waypoints[-1].pose.position)
-        
-        if goal_distance < MAX_DISTANCE:
-            self.desired_velocity = MAX_VELOCITY * (goal_distance / (1.5 * MAX_DISTANCE))       # 2.5
-
-        # rospy.loginfo("Target Velocity = %f", self.desired_velocity)
-        
-        error = self.desired_velocity - self.velocity
-        self.integral_error += error * DT
-        derivative_error = (error - self.old_error) / DT
-
-        throttle = (KP * error) + (KI * (self.integral_error)) + (KD * (derivative_error))
-
-        self.old_error = error
-
-        if throttle < -0.1:
-            brakes = 0.65 * abs(throttle)
-
-        throttle = max(min(1.0, throttle), 0.0)
-
-        brakes = max(min(1.0, brakes), 0.0)
-        
-        return throttle, brakes
 
     def purepursuit(self, targetIndex):
-        roll, pitch, yaw = euler_from_quaternion([self.ori_x, self.ori_y, self.ori_z, self.ori_w])
-
-        # yaw += (math.pi/2.0)
-        # rospy.loginfo("Yaw: %f", yaw)
-
-        self.rear_y = self.current_y - ((WB) * math.sin(yaw))
-        self.rear_x = self.current_x - ((WB) * math.cos(yaw))
-
         steering_angle = 0.0
-                
+        
+        roll, pitch, yaw = euler_from_quaternion([self.ori_x, self.ori_y, self.ori_z, self.ori_w])
+        rospy.loginfo("Yaw: %f", yaw)
+
+        self.rear_y = self.current_y - ((WB) * np.sin(yaw))
+        self.rear_x = self.current_x - ((WB) * np.cos(yaw))
+
         target_point = self.waypoints[targetIndex].pose.position
         target_point_x = target_point.x
         target_point_y = target_point.y
@@ -242,10 +174,9 @@ class Trajectory:
         relative_y = target_point_y - self.rear_y
 
         alpha = math.atan2(relative_y , relative_x) - yaw
+        steering_angle = -math.atan2((2.0 * WB * np.sin(alpha)) , self.Ld) * (180.0 / math.pi)
 
-        steering_angle = math.atan2((2.0 * WB * math.sin(alpha)) / self.Ld , 1.0) * (180.0 / math.pi)
-
-        steering_angle = max(min(25.0 , steering_angle) , -25.0)
+        steering_angle = max(min(20.0 , steering_angle) , -20.0)
 
         return steering_angle
 
@@ -255,6 +186,10 @@ if __name__ == '__main__':
         controller = Trajectory()
         rospy.init_node('controller', anonymous=True)
         rospy.loginfo("Controller has been intialized")
+
+        # rospy.Subscriber(
+        #     '/goal', Bool, controller.is_goal_callback, queue_size=10
+        # )
         
         rospy.Subscriber(
             '/Path', Path, controller.waypointsCallback, queue_size=10
@@ -263,12 +198,17 @@ if __name__ == '__main__':
         rospy.Subscriber(
             '/aft_mapped_adjusted', Odometry, controller.stateCallback, queue_size=10
         )
+
         ###
+        # Topics #
+        #
         # /in_Car_velocity_in_KM/H          std_msgs/Float32        velocity
         # /in_Car_steering_in_degree        std_msgs/Float32        steering_angle
         # /aft_mapped_adjusted              nav_msgs/Odometry
         # /image_raw                        sensor_msgs/Image
-        #  ###
+        # 
+        ###
+
         rospy.spin()
 
         # df_vel = pd.DataFrame(data)

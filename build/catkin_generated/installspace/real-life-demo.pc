@@ -1,8 +1,0 @@
-prefix=/usr/local
-
-Name: real-life-demo
-Description: Description of real-life-demo
-Version: 0.0.0
-Cflags: 
-Libs: -L${prefix}/lib 
-Requires: 
