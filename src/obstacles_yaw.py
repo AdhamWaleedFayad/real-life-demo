@@ -6,6 +6,7 @@ from sensor_msgs.msg import PointCloud2, PointField, PointCloud
 from nav_msgs.msg import Odometry
 import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import Point32
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.cluster import DBSCAN
 
@@ -17,9 +18,10 @@ class Lidar:
         self.odom_sub = rospy.Subscriber("/aft_mapped_adjusted", Odometry, self.odom_callback)
         self.boundary_pub = rospy.Publisher("/obstacles", PointCloud, queue_size=2)
         self.points = [[], [], []]  # x, y, z
-        self.min_distance_threshold = 1  # in meters
+        self.min_distance_threshold = 2.2  # in meters
         self.max_distance_threshold = 8.0  # in meters
-        self.vehicle_diagonal = 0.5
+        self.vehicle_diagonal = 0
+        self.ground = 99
         self.current_odom = None
 
     def odom_callback(self, msg):
@@ -37,10 +39,13 @@ class Lidar:
         filtered_points = [[], [], []]
         for x, y, z in cloud_points:
             distance = np.sqrt(x**2 + y**2)
-            if self.min_distance_threshold <= distance <= self.max_distance_threshold and z > -1.2 and z < 0:
+            if self.min_distance_threshold <= distance <= self.max_distance_threshold and z > -1.07 and z < 0:
                 filtered_points[0].append(x)
                 filtered_points[1].append(y)
                 filtered_points[2].append(z)
+            if z < self.ground: 
+                self.ground = z
+                print(self.ground)
 
         rospy.loginfo("Filtered {} points.".format(len(filtered_points[0])))
         self.points = filtered_points
@@ -68,7 +73,7 @@ class Lidar:
     def cluster_points(self):
         points_array = np.array(list(zip(self.points[0], self.points[1], self.points[2])))
 
-        db = DBSCAN(eps=0.5, min_samples=10).fit(points_array)
+        db = DBSCAN(eps=0.8, min_samples=3).fit(points_array)
         labels = db.labels_
 
         unique_labels = set(labels)
@@ -85,6 +90,7 @@ class Lidar:
 
                 distances = np.linalg.norm(xy - centroid, axis=1)
                 max_distance = np.max(distances)
+                if max_distance > 0.5: continue
                 radius = max_distance + self.vehicle_diagonal
                 radii.append(radius)
 
@@ -99,15 +105,19 @@ class Lidar:
         position, euler = self.current_odom
         odom_x = position.x
         odom_y = position.y
-        yaw = euler[2]
+        yaw = euler[2] 
 
         for centroid, radius in zip(centroids, radii):
             point = Point32()
-            point.x = centroid[0] * np.cos(yaw) - centroid[1] * np.sin(yaw) + odom_x
-            point.y = centroid[0] * np.sin(yaw) + centroid[1] * np.cos(yaw) + odom_y
+            #point.x = centroid[0] * np.cos(yaw) - centroid[1] * np.sin(yaw) + odom_x
+            #point.y = centroid[0] * np.sin(yaw) + centroid[1] * np.cos(yaw) + odom_y
+            point.x = centroid[0]
+            point.y = centroid[1]
             point.z = radius
             points.append(point)
+        
 
+        # plt.scatter(points[0],points[1])
         boundary_msg = PointCloud()
         boundary_msg.header = header
         boundary_msg.points = points
@@ -119,5 +129,6 @@ if __name__ == "__main__":
     try:
         lidar = Lidar()
         rospy.spin()
+
     except rospy.ROSInterruptException:
         rospy.logerr("ROS node interrupted.")
