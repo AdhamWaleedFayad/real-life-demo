@@ -1,0 +1,9 @@
+<launch>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find real_life_demo)/rviz/real_demo_config.rviz" />
+
+    <node pkg="real_life_demo" type="obstacles_yaw.py" name="lidar_node" />
+
+    <node pkg="real_life_demo" type="path_gen.py" name="Path_gen" />
+
+    <node pkg="real_life_demo" type="purpursuit.py" name="controller" />
+</launch>
