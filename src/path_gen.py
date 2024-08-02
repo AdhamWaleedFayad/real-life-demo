@@ -60,4 +60,4 @@ if __name__ == '__main__' :
     '''plt.plot(x_path,y_path)
     plt.show()
     '''
-    rospy.spin()
+    # rospy.spin()
