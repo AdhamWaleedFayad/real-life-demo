@@ -18,9 +18,9 @@ WB = 2.1                #Wheel base
 MU = 0.7                #Friction coefficient
 G = 9.81                #Gravity
 DT = 0.05               #Time step
-KV = 0.2                #Velocity constant (step size)      0.3
+KV = 0.0                #Velocity constant (step size)      0.3
 STEP_SIZE = 0.5         #Step size                          1.1
-RANGE_DIST = 1.0        #Range distance                     10.0
+RANGE_DIST = 4.0        #Range distance                     10.0
 
 state_pos_x = 0.0
 state_pos_y = 0.0
@@ -39,14 +39,14 @@ obstacles_distance = 0.0
 goal_node = None
 goal_reached = False
 # for plotting
-style.use('fivethirtyeight')
-fig = plt.figure()
-ax1 = fig.add_subplot(1,1,1)
+# style.use('fivethirtyeight')
+# fig = plt.figure()
+# ax1 = fig.add_subplot(1,1,1)
 
 def animate(i):
     global state_pos_x, state_pos_y, plotted_path_x, plotted_path_y
-    for i in range(len(plotted_path_x)):
-        ax1.plot(plotted_path_x[i], plotted_path_y[i], ',b')
+    # for i in range(len(plotted_path_x)):
+    #     ax1.plot(plotted_path_x[i], plotted_path_y[i], '-b')
     # ax1.clear()
 
     # if plotted_path_x and plotted_path_y:
@@ -55,12 +55,12 @@ def animate(i):
     #     plotted_path_x.clear()
     #     plotted_path_y.clear()
 
-    ax1.plot(state_pos_x, state_pos_y, 'go')
+    # ax1.plot(state_pos_x, state_pos_y, 'go')
 
     # for i, obstacle in enumerate(obstacles):
     #     ax1.plot(obstacle.x, obstacle.y, 'ro')
-    # ax1.set_xlim(-20.0, 20.0)
-    # ax1.set_ylim(0.0, 80.0)
+    # ax1.set_xlim(0.0, 15.0)
+    # ax1.set_ylim(-5.0, 5.0)
 
 
 class Node:
@@ -76,6 +76,16 @@ def get_distance(current:Node, neighbor:Node):
 
     return math.sqrt((neighbor.x - current.x)**2 + (neighbor.y - current.y)**2)
 
+"""
+# checkPoints_callback()
+# Callback function to get the next goal point from global_planning Node #
+
+# Parameters:
+#   data - The next goal point to reach : of type - PointStamped
+
+# Subscriber:
+#   '/checkpoint' : PointStamped
+"""
 # def checkPoints_callback(data:PointStamped):
 #     global goal_node, goal_reached
 #     msg = data.point
@@ -85,6 +95,16 @@ def get_distance(current:Node, neighbor:Node):
 #     else:
 #         goal_node = Node(msg.x, msg.y)
 
+"""
+# is_goal_callback()
+# Callback function to know if we reached the goal or not from global_planning Node #
+
+# Parameters:
+#   data - True if goal is reached, False if the is not reached yet : of type - Float32
+
+# Subscriber:
+#   '/goal' : Bool
+"""
 # def is_goal_callback(data:Bool):
 #     global goal_reached
 #     goal_reached = data.data
@@ -95,7 +115,7 @@ def velocity_callback(data:Float32):
 
 
 def odom_callback(msg:Odometry):
-    global state_pos_x, state_pos_y, start_pos_x, start_pos_y, state_yaw, velocity, goal_node
+    global state_pos_x, state_pos_y, start_pos_x, start_pos_y, state_yaw, velocity, goal_node, goal_reached
 
     state_pos_x = (msg.pose.pose.position.x)
     state_pos_y = (msg.pose.pose.position.y)
@@ -109,10 +129,10 @@ def odom_callback(msg:Odometry):
     # vel_y = msg.twist.twist.linear.y
 
     # velocity = math.sqrt(vel_x**2 + vel_y**2)
-    velocity = 5.0 * (5.0/18.0)
+    velocity = 3.0 * (5.0/18.0)
 
     roll, pitch, yaw = euler_from_quaternion([ori_x, ori_y, ori_z, ori_w])
-    state_yaw = yaw + (math.pi/2.0)
+    state_yaw = yaw #+ (math.pi/2.0)
     rospy.loginfo("Yaw orientation: %f", state_yaw)
 
     start_pos_x = state_pos_x #+ ((0.2) * math.cos(state_yaw))
@@ -121,28 +141,34 @@ def odom_callback(msg:Odometry):
     path_pub = rospy.Publisher(
         '/Path', Path, queue_size=10
     )
+    # goal_pub = rospy.Publisher(
+    #     '/goal', Bool, queue_size=10
+    # )
+
+    # goal_reached_msg = Bool(goal_reached)
+    # goal_pub.publish(goal_reached_msg)
         
     path = Path()
     path.header.frame_id = "map"
 
     rospy.loginfo("Generating path...")
-    goal_node = Node(0.0, 10.0, theta=(math.pi/2.0))
+    goal_node = Node(8.0, 0.0, theta=0.0)
+    
     # if goal_node is not None:
     best_path = hybrid_astar(goal_node)
+    if best_path:
+        for i, node in enumerate(best_path):
+            pose = PoseStamped()
+            pose.pose.position.x = node[0]
+            pose.pose.position.y = node[1]
+            path.poses.append(pose)
 
-    for i, node in enumerate(best_path):
-        pose = PoseStamped()
-        pose.pose.position.x = node[0]
-        pose.pose.position.y = node[1]
-        path.poses.append(pose)
-
-    path_pub.publish(path)
-
-    # else:
-    #     empty_path = Path()
-    #     empty_path.header.frame_id = "map"
-    #     empty_path.poses = []
-    #     path_pub.publish(empty_path)
+        path_pub.publish(path)
+    else:
+        empty_path = Path()
+        empty_path.header.frame_id = "map"
+        empty_path.poses = []
+        path_pub.publish(empty_path)
     
     rospy.loginfo("Path has been published.")
 
@@ -209,7 +235,7 @@ def reconstruct_path(parents:dict, current_node:Node):
     return optimal_path
 
 def hybrid_astar(goal:Node):
-    global state_pos_x, state_pos_y, start_pos_x, start_pos_y, state_yaw, plotted_path_x, plotted_path_y, obstacles_distance
+    global state_pos_x, state_pos_y, start_pos_x, start_pos_y, state_yaw, plotted_path_x, plotted_path_y, obstacles_distance, goal_reached
 
     open_list = []
     closed_list = []
@@ -241,10 +267,9 @@ def hybrid_astar(goal:Node):
             current_tuple[2], current_tuple[3], g_score[(current_tuple[2], current_tuple[3])], h_score[(current_tuple[2], current_tuple[3])], current_tuple[4]
         )
 
-        if (get_distance(current, goal) < 0.5):
-            came_from[(goal.x, goal.y)] = current
-            optimal_path = reconstruct_path(came_from, current)
-            return optimal_path
+        if abs(start.x - goal.x) <= 1.0 and abs(start.y - goal.y) <= 1.0:
+            goal_reached = True
+
         
         if get_distance(start, current) > RANGE_DIST:
             optimal_path = reconstruct_path(came_from, current)
@@ -271,8 +296,8 @@ def hybrid_astar(goal:Node):
             h_score[(neighbor.x, neighbor.y)] = neighbor.h_cost
             
             obstacles_distance = 0.0
-            plotted_path_x[neighbors.index(neighbor)] = [neighbor.x, current.x]
-            plotted_path_y[neighbors.index(neighbor)] = [neighbor.y, current.y]
+            # plotted_path_x[neighbors.index(neighbor)] = [neighbor.x, current.x]
+            # plotted_path_y[neighbors.index(neighbor)] = [neighbor.y, current.y]
     current_tuple = min(h_score, key = h_score.get)
     current = came_from[(current_tuple[0], current_tuple[1])]
     
@@ -299,8 +324,8 @@ if __name__ == '__main__':
         rospy.Subscriber(
             '/aft_mapped_adjusted', Odometry, odom_callback, queue_size=10
         )
-        ani = animation.FuncAnimation(fig, animate, interval=1000*DT)
-        plt.show()
+        # ani = animation.FuncAnimation(fig, animate, interval=1000*DT)
+        # plt.show()
 
         rospy.spin()
 
